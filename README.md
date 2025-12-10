@@ -37,20 +37,19 @@ O sistema foi dividido em containers independentes que rodam sobre uma rede virt
 
 ### Diagrama de Funcionamento
 
-```mermaid
-graph TD
-    User((Usuário)) -->|HTTP:80| Proxy[🚪 Nginx Proxy]
+    graph TD
+        User((Usuario)) -->|HTTP:80| Proxy[Nginx Proxy]
+        
+        subgraph "Docker Swarm Cluster"
+            Proxy -->|Round Robin| App1[Backend PHP - Replica 1]
+            Proxy -->|Round Robin| App2[Backend PHP - Replica 2]
+            Proxy -->|Round Robin| App3[Backend PHP - Replica 3]
+            
+            App1 -->|Rede Interna| DB[(MySQL Database)]
+            App2 -->|Rede Interna| DB
+            App3 -->|Rede Interna| DB
+        end
 
-    subgraph "Docker Swarm Cluster"
-        Proxy -->|Balanceamento (Round Robin)| App1[🧠 Backend PHP - Réplica 1]
-        Proxy -->|Balanceamento (Round Robin)| App2[🧠 Backend PHP - Réplica 2]
-        Proxy -->|Balanceamento (Round Robin)| App3[🧠 Backend PHP - Réplica 3]
-
-        App1 -->|Rede Interna| DB[(💾 MySQL Database)]
-        App2 -->|Rede Interna| DB
-        App3 -->|Rede Interna| DB
-    end
-```
 
 ---
 
