@@ -1,29 +1,40 @@
 version: '3.8'
 
 services:
+  # --- BACKEND (PHP) ---
+  # Usa a pasta ./php para edição em tempo real
   backend:
+    image: toshiro-backend:v1
     build:
       context: ./php
       dockerfile: Dockerfile
-    image: toshiro-backend:v1
+    volumes:
+      # O PULO DO GATO: Mapeia sua pasta './php' para o servidor web.
+      # Alterou no VS Code -> Alterou no Site.
+      - ./php:/var/www/html
     deploy:
-      replicas: 3
-      restart_policy:
-        condition: on-failure
+      replicas: 1
+      placement:
+        constraints:
+          # IMPORTANTE: O container precisa rodar onde a pasta 'php' existe.
+          # Confirme se o nome do seu host é este mesmo com o comando 'hostname'
+          - node.hostname == shibakita-manager-1
     networks:
       - shibakita-net
     depends_on:
       - db
 
+  # --- BANCO DE DADOS (MySQL) ---
+  # Usa Volume Padrão (Interno do Docker) para os dados
   db:
     image: mysql:5.7
     environment:
-      # IMPORTANTE: Estas variáveis devem ser IGUAIS ao arquivo index.php
       MYSQL_ROOT_PASSWORD: Senha123
       MYSQL_DATABASE: meubanco
     volumes:
+      # 1. Volume Padrão: Salva os dados brutos internamente no Docker (Segurança)
       - db_data:/var/lib/mysql
-      # Importa a tabela automaticamente ao iniciar
+      # 2. Inicialização: Lê seu arquivo SQL apenas para criar a tabela na primeira vez
       - ./php/banco.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - shibakita-net
@@ -31,24 +42,30 @@ services:
       placement:
         constraints: [node.role == manager]
 
+  # --- PROXY (Nginx) ---
   proxy:
+    image: toshiro-proxy:v1
     build:
       context: ./proxy
-      dockerfile: Dockerfile 
-    image: toshiro-proxy:v1
+      dockerfile: Dockerfile
     ports:
-      - "80:80" # A porta 4500 que você queria usar pode ser mapeada aqui se preferir: "4500:80"
+      - "80:80"
     networks:
       - shibakita-net
     depends_on:
       - backend
     deploy:
       replicas: 2
+      placement:
+        constraints: [node.role == manager]
 
 networks:
   shibakita-net:
     driver: overlay
     attachable: true
 
+# --- DEFINIÇÃO DO VOLUME PADRÃO ---
 volumes:
-  db_data:
+  db_data: 
+    # O Docker vai criar este volume automaticamente em /var/lib/docker/volumes/...
+    # Seus dados estarão seguros aqui.
