@@ -1,4 +1,117 @@
-Docker: Utilização prática no cenário de Microsserviços
-Denilson Bonatti, Instrutor - Digital Innovation One
+# 🛒 Projeto Toshiro Shibakita: Infraestrutura de Alta Disponibilidade
 
-Muito se tem falado de containers e consequentemente do Docker no ambiente de desenvolvimento. Mas qual a real função de um container no cenários de microsserviços? Qual a real função e quais exemplos práticos podem ser aplicados no dia a dia? Essas são algumas das questões que serão abordadas de forma prática pelo Expert Instructor Denilson Bonatti nesta Live Coding. IMPORTANTE: Agora nossas Live Codings acontecerão no canal oficial da dio._ no YouTube. Então, já corre lá e ative o lembrete! Pré-requisitos: Conhecimentos básicos em Linux, Docker e AWS.
+> **Status:** ✅ Operacional | **Ambiente:** Proxmox VE + Docker Swarm
+
+Este projeto documenta a implementação de uma arquitetura de **Microsserviços** escalável, migrando um sistema legado para um **Cluster Docker Swarm** simulado em uma nuvem privada (On-Premise) com Proxmox.
+
+O objetivo é demonstrar conceitos de **Alta Disponibilidade (HA)**, **Balanceamento de Carga**, **Persistência de Dados** e **Orquestração de Containers**.
+
+---
+
+## 🏗️ 1. Infraestrutura (Camada de Virtualização)
+
+O "chão de fábrica" deste projeto roda sobre o Hypervisor **Proxmox VE**. Foram provisionadas 3 Máquinas Virtuais (VMs) idênticas para compor o cluster.
+
+### Especificações das VMs (Nós do Cluster)
+
+| ID  | Hostname              | Função (Role)          | S.O.      | vCPU | RAM | IP       |
+|:---:|-----------------------|------------------------|-----------|:----:|:---:|----------|
+| **104** | `shibakita-manager-1` | **Leader / Manager** | Debian 13 | 2    | 2GB | `...104` |
+| **105** | `shibakita-manager-2` | **Manager (Reach)** | Debian 13 | 2    | 2GB | `...105` |
+| **106** | `shibakita-manager-3` | **Manager (Reach)** | Debian 13 | 2    | 2GB | `...106` |
+
+### 🔧 Como as VMs foram configuradas
+
+1. **Template Base:** Criada uma VM com Debian 13 (Trixie) limpo + Docker Engine + Agente QEMU.
+2. **Clonagem:** Utilizado o recurso de *Linked Clone* do Proxmox para economizar espaço e agilizar o provisionamento.
+3. **Cluster Swarm:**
+    * A VM 104 iniciou o cluster (`docker swarm init`).
+    * As VMs 105 e 106 ingressaram como gerentes (`docker swarm join --token ...`).
+    * **Resultado:** Alta disponibilidade real — qualquer gerente pode cair sem derrubar o cluster.
+
+---
+
+## 🧩 2. Arquitetura de Software (Microsserviços)
+
+O sistema foi quebrado em containers independentes que rodam sobre uma rede virtual protegida (`overlay`), isolada da rede física.
+
+### Diagrama de Funcionamento
+
+```mermaid
+graph TD
+    User((Usuário)) -->|HTTP:80| Proxy[🚪 Nginx Proxy]
+    
+    subgraph "Docker Swarm Cluster"
+        Proxy -->|Balanceamento (Round Robin)| App1[🧠 Backend PHP - Réplica 1]
+        Proxy -->|Balanceamento (Round Robin)| App2[🧠 Backend PHP - Réplica 2]
+        Proxy -->|Balanceamento (Round Robin)| App3[🧠 Backend PHP - Réplica 3]
+        
+        App1 -->|Rede Interna| DB[(💾 MySQL Database)]
+        App2 -->|Rede Interna| DB
+        App3 -->|Rede Interna| DB
+    end
+````
+
+---
+
+## 🧱 Explicação dos Componentes
+
+### **🚪 1. Proxy Reverso (Nginx)**
+* Função: Atua como porteiro, recebendo todas as requisições externas.
+
+* Destaque: Não expõe IPs internos. Ele consulta o DNS interno do Docker para encontrar o serviço backend.
+
+### **🧠 2. Backend (PHP 7.4 + Apache)**
+* Função: Processa a lógica e renderiza o HTML para o usuário.
+
+* Escalabilidade: Definido com 3 réplicas. Cada VM executa uma cópia do backend.
+
+* Hot-Reload: A pasta ./php usa bind mount → qualquer mudança no código é refletida automaticamente nos containers.
+
+### **💾 3. Banco de Dados (MySQL 5.7)**
+* Função: Armazenamento dos dados.
+
+* Segurança: Acessível apenas pela rede privada do Swarm.
+
+* Persistência: Gerenciada por docker volume (db_data), garantindo que dados sobrevivam a reinícios dos containers.
+---
+## 📂 3. Estrutura do Projeto
+    
+    /toshiro-shibakita
+    │
+    ├── docker-compose.yml     # 📜 Orquestra todos os serviços
+    │
+    ├── php/                   # 📁 Backend PHP
+    │   ├── Dockerfile         # Imagem personalizada PHP + MySQL extensions
+    │   ├── index.php          # Código principal (frontend + backend)
+    │   └── banco.sql          # Script para criação da tabela
+    │
+    └── proxy/                 # 📁 Proxy reverso
+        ├── Dockerfile         # Imagem base do Nginx
+        └── nginx.conf         # Regras de proxy / balanceamento
+---
+## 🚀 4. Como Executar (Deploy)
+### **Pré-requisitos**
+* Acesso ao nó shibakita-manager-1
+
+* Git e Docker instalados
+
+### 1️⃣ Baixar o projeto
+
+    git clone https://github.com/SEU_USUARIO/toshiro-shibakita.git
+    cd toshiro-shibakita
+### 2️⃣ Subir a Stack
+    docker stack deploy -c docker-compose.yml toshiro
+### 3️⃣ Validar
+    docker service ls
+
+O serviço toshiro_backend deve aparecer com 3/3 réplicas ativas.
+### 4️⃣ Acessar
+Abra no navegador: http://IP-DE-QUALQUER-NO
+----
+## 🧪 5. Testes de Validação
+###🔁 Teste de Balanceamento
+**Ao apertar F5 repetidas vezes no navegador, o campo "Requisição processada por:" alterará o nome do Host, indicando que:**
+* O proxy está distribuindo o tráfego
+* Os backends estão operando em cluster
+* O Swarm está saudável
