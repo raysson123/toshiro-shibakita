@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    image: toshiro-backend:v1
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+    networks:
+      - shibakita-net
+    depends_on:
+      - db
+
+  db:
+    image: mysql:5.7
+    environment:
+      # IMPORTANTE: Estas variáveis devem ser IGUAIS ao arquivo index.php
+      MYSQL_ROOT_PASSWORD: Senha123
+      MYSQL_DATABASE: meubanco
+    volumes:
+      - db_data:/var/lib/mysql
+      # Importa a tabela automaticamente ao iniciar
+      - ./php/banco.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - shibakita-net
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile 
+    image: toshiro-proxy:v1
+    ports:
+      - "80:80" # A porta 4500 que você queria usar pode ser mapeada aqui se preferir: "4500:80"
+    networks:
+      - shibakita-net
+    depends_on:
+      - backend
+    deploy:
+      replicas: 2
+
+networks:
+  shibakita-net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  db_data:
